@@ -5,6 +5,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Objects;
 
 /**
@@ -36,8 +37,8 @@ public class GameBoardController {
      *
      * @param playerId The id of the player to kick out.
      */
-    public void kickOut(int playerId) {
-
+    public synchronized void kickOut(int playerId) {
+        gameBoard.getPlayer(playerId).getOwner().setEntity(null);
     }
 
     /**
@@ -71,7 +72,7 @@ public class GameBoardController {
      * @return An instance of {@link MoveResult} representing the result of this action.
      */
     @Nullable
-    public MoveResult makeMove(@NotNull final Direction direction, int playerID) {
+    public synchronized MoveResult makeMove(@NotNull final Direction direction, int playerID) {
         Objects.requireNonNull(direction);
 
 
@@ -110,7 +111,7 @@ public class GameBoardController {
      *
      * @param prevMove The {@link MoveResult} object to revert.
      */
-    public void undoMove(@NotNull final MoveResult prevMove) {
+    public synchronized void undoMove(@NotNull final MoveResult prevMove) {
         // undo is not allow in multiplayer mode
         if (gameBoard.isMultiplayer()) {
             throw new IllegalCallerException();
@@ -147,7 +148,7 @@ public class GameBoardController {
      * moving.
      */
     @NotNull
-    public MoveResult tryMove(@NotNull final Position position, @NotNull final Direction direction, int playerID) {
+    public synchronized MoveResult tryMove(@NotNull final Position position, @NotNull final Direction direction, int playerID) {
         Objects.requireNonNull(position);
         Objects.requireNonNull(direction);
 
@@ -219,5 +220,44 @@ public class GameBoardController {
         }
 
         return newPos;
+    }
+
+    public synchronized boolean checkGems(@NotNull final Position position, @NotNull final Direction direction, int playerID) {
+        Objects.requireNonNull(position);
+        Objects.requireNonNull(direction);
+
+        final var collectedGems = new ArrayList<Position>();
+        final var collectedExtraLives = new ArrayList<Position>();
+        Position lastValidPosition = position;
+        do {
+            final Position newPosition = offsetPosition(lastValidPosition, direction);
+            if (newPosition == null) {
+                break;
+            }
+
+            // in multiplayer mode, we consider other players as a wall.
+            if (gameBoard.getCell(newPosition) instanceof EntityCell entityCell)
+                if (entityCell.getEntity() instanceof Player otherPlayer)
+                    if (otherPlayer.getId() != playerID)
+                        break;
+
+
+            lastValidPosition = newPosition;
+
+            if (gameBoard.getCell(newPosition) instanceof StopCell) {
+                break;
+            }
+
+            if (gameBoard.getCell(newPosition) instanceof EntityCell entityCell) {
+
+                if (entityCell.getEntity() instanceof Gem) {
+                    collectedGems.add(newPosition);
+                } else if (entityCell.getEntity() instanceof ExtraLife) {
+                    collectedExtraLives.add(newPosition);
+                }
+            }
+        } while (true);
+
+        return collectedGems.size()>0;
     }
 }

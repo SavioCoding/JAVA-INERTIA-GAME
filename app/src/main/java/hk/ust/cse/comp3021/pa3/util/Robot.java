@@ -3,11 +3,11 @@ package hk.ust.cse.comp3021.pa3.util;
 import hk.ust.cse.comp3021.pa3.model.Direction;
 import hk.ust.cse.comp3021.pa3.model.GameState;
 import hk.ust.cse.comp3021.pa3.model.MoveResult;
+import javafx.application.Platform;
 import org.jetbrains.annotations.NotNull;
-
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-
+import hk.ust.cse.comp3021.pa3.model.*;
 /**
  * The Robot is an automated worker that can delegate the movement control of a player.
  * <p>
@@ -35,6 +35,8 @@ public class Robot implements MoveDelegate {
      */
     private final Strategy strategy;
 
+    private Thread runningthread;
+
     public Robot(GameState gameState) {
         this(gameState, Strategy.Random);
     }
@@ -44,6 +46,31 @@ public class Robot implements MoveDelegate {
         this.gameState = gameState;
     }
 
+    public static HashMap<Integer, Boolean> idToMutex = new HashMap<Integer, Boolean>();
+
+    private class Worker implements Runnable{
+        private MoveProcessor processor;
+
+        public Worker(MoveProcessor processor){
+            this.processor = processor;
+        }
+
+        @Override
+        public void run(){
+            while(idToMutex.get(gameState.getPlayer().getId())) {
+                try {
+                    Thread.sleep(timeIntervalGenerator.next());
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                if(strategy==Strategy.Random) {
+                    Platform.runLater(() -> makeMoveRandomly(processor));
+                }else if(strategy==Strategy.Smart){
+                    Platform.runLater(()-> makeMoveSmartly(processor));
+                }
+            }
+        }
+    }
     /**
      * TODO Start the delegation in a new thread.
      * The delegation should run in a separate thread.
@@ -67,9 +94,14 @@ public class Robot implements MoveDelegate {
      *
      * @param processor The processor to make movements.
      */
+
     @Override
     public void startDelegation(@NotNull MoveProcessor processor) {
-
+        stopDelegation();
+        idToMutex.put(gameState.getPlayer().getId(), true);
+        Thread thread = new Thread(new Worker(processor));
+        runningthread = thread;
+        thread.start();
     }
 
     /**
@@ -78,7 +110,9 @@ public class Robot implements MoveDelegate {
      */
     @Override
     public void stopDelegation() {
-
+        if(runningthread!=null) {
+            idToMutex.put(gameState.getPlayer().getId(), false);
+        }
     }
 
     private MoveResult tryMove(Direction direction) {
@@ -90,6 +124,14 @@ public class Robot implements MoveDelegate {
         return r;
     }
 
+    private boolean checkingGems(Direction direction) {
+        var player = gameState.getPlayer();
+        if (player.getOwner() == null) {
+            return false;
+        }
+        var r = gameState.getGameBoardController().checkGems(player.getOwner().getPosition(), direction, player.getId());
+        return r;
+    }
     /**
      * The robot moves randomly but rationally,
      * which means the robot will not move to a direction that will make the player die if there are other choices,
@@ -115,10 +157,12 @@ public class Robot implements MoveDelegate {
                 deadDirection = direction;
             }
         }
-        if (aliveDirection != null) {
-            processor.move(aliveDirection);
-        } else if (deadDirection != null) {
-            processor.move(deadDirection);
+        synchronized (GameState.class) {
+            if (aliveDirection != null) {
+                processor.move(aliveDirection);
+            } else if (deadDirection != null) {
+                processor.move(deadDirection);
+            }
         }
     }
 
@@ -135,7 +179,32 @@ public class Robot implements MoveDelegate {
      * @param processor The processor to make movements.
      */
     private void makeMoveSmartly(MoveProcessor processor) {
-
+        var directions = new ArrayList<>(Arrays.asList(Direction.values()));
+        Collections.shuffle(directions);
+        Direction aliveDirection = null;
+        Direction deadDirection = null;
+        Direction gemDirection = null;
+        for (var direction :
+                directions) {
+            var result = tryMove(direction);
+            if (result instanceof MoveResult.Valid.Alive) {
+                aliveDirection = direction;
+                if(checkingGems(direction)==true){
+                    gemDirection = direction;
+                }
+            } else if (result instanceof MoveResult.Valid.Dead) {
+                deadDirection = direction;
+            }
+        }
+        synchronized (GameState.class) {
+            if (gemDirection != null) {
+                processor.move(gemDirection);
+            } else if (aliveDirection != null) {
+                processor.move(aliveDirection);
+            } else if (deadDirection != null) {
+                processor.move(deadDirection);
+            }
+        }
     }
 
 }

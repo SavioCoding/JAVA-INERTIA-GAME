@@ -100,7 +100,7 @@ public class GameController {
      * @param direction The direction the player wants to move to.
      * @return An instance of {@link MoveResult} indicating the result of the action.
      */
-    public MoveResult processMove(@NotNull final Direction direction) {
+    public synchronized MoveResult processMove(@NotNull final Direction direction) {
         return processMove(direction, getGameState().getPlayer().getId());
     }
 
@@ -121,22 +121,25 @@ public class GameController {
         }
 
         var gameState = this.getGameState(playerID);
-        if (result instanceof MoveResult.Valid v) {
-            gameState.incrementNumMoves();
+        synchronized (gameState) {
+            if (result instanceof MoveResult.Valid v) {
+                gameState.incrementNumMoves();
 
-            if (v instanceof MoveResult.Valid.Alive va) {
-                gameState.increaseNumLives(va.collectedExtraLives.size());
-                gameState.increaseNumGotGems(va.collectedGems.size());
-                gameState.getMoveStack().push(va);
-            } else if (v instanceof MoveResult.Valid.Dead) {
-                gameState.incrementNumDeaths();
-                var livesLeft = gameState.decrementNumLives();
-                if (livesLeft == 0) {
-                    this.getGameState(playerID).getGameBoardController().kickOut(playerID);
-                    result = new MoveResult.Valid.KickedOut(v.origPosition);
+                if (v instanceof MoveResult.Valid.Alive va) {
+                    gameState.increaseNumLives(va.collectedExtraLives.size());
+                    gameState.increaseNumGotGems(va.collectedGems.size());
+                    gameState.getMoveStack().push(va);
+                } else if (v instanceof MoveResult.Valid.Dead) {
+                    gameState.incrementNumDeaths();
+                    var livesLeft = gameState.decrementNumLives();
+                    if (livesLeft == 0) {
+                        this.getGameState(playerID).getGameBoardController().kickOut(playerID);
+                        result = new MoveResult.Valid.KickedOut(v.origPosition);
+                    }
                 }
             }
         }
+
 
         return result;
     }
@@ -177,6 +180,35 @@ public class GameController {
      */
     @Nullable
     public Player[] getWinners() {
-        throw new NotImplementedException();
+        //throw new NotImplementedException();
+        ArrayList<Player> winners = new ArrayList<>();
+        boolean gems_not_left = false;
+        try{
+            gems_not_left = getGameState().noGemsLeft();
+        }catch(IllegalArgumentException e){
+            Player[] players = getPlayers();
+            for(int i=0; i< players.length; i++){
+                gems_not_left = players[i].getGameState().noGemsLeft();
+            }
+        }
+        if(gems_not_left){
+            Player[] players = getPlayers();
+            int max_score = players[0].getGameState().getScore();
+            for(int i=0; i<players.length; i++){
+                if(players[i].getGameState().getScore()>max_score){
+                    max_score = players[i].getGameState().getScore();
+                }
+            }
+            for(int i=0; i<players.length; i++){
+                if(players[i].getGameState().getScore()==max_score){
+                    winners.add(players[i]);
+                }
+            }
+            Player[] winner_array = new Player[winners.size()];
+            winners.toArray(winner_array);
+            return winner_array;
+        }else{
+            return null;
+        }
     }
 }

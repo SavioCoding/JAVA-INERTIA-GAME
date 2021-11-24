@@ -17,8 +17,8 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.GridPane;
 import org.jetbrains.annotations.NotNull;
-
 import java.util.Objects;
+import hk.ust.cse.comp3021.pa3.util.Robot;
 
 /**
  * A {@link javafx.scene.layout.Pane} representing the control area of a player.
@@ -77,7 +77,7 @@ public class GameControlPane extends GridPane implements GameUIComponent {
      *
      * @param direction The {@link Direction} to move.
      */
-    private void move(@NotNull Direction direction) {
+    private synchronized void move(@NotNull Direction direction) {
         var result = this.gameController.processMove(direction, player.getId());
         if (result != null) {
             this.moveEvent.get().handle(new MoveEvent(result, player.getId()));
@@ -104,7 +104,10 @@ public class GameControlPane extends GridPane implements GameUIComponent {
      * @param delegate The automated delegate to control the movement.
      */
     public void delegateControl(MoveDelegate delegate) {
-
+        delegate.startDelegation((direction)->{
+            move(direction);
+        });
+        disable();
     }
 
     /**
@@ -114,7 +117,8 @@ public class GameControlPane extends GridPane implements GameUIComponent {
      * should be enabled to allow control from GUI, i.e., call {@link GameControlPane#enable()}.
      */
     public void revokeControl() {
-
+        Robot.idToMutex.put(player.getId(), false);
+        enable();
     }
 
     /**
