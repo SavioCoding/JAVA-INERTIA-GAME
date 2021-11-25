@@ -77,10 +77,12 @@ public class GameControlPane extends GridPane implements GameUIComponent {
      *
      * @param direction The {@link Direction} to move.
      */
-    private synchronized void move(@NotNull Direction direction) {
-        var result = this.gameController.processMove(direction, player.getId());
-        if (result != null) {
-            this.moveEvent.get().handle(new MoveEvent(result, player.getId()));
+    private void move(@NotNull Direction direction) {
+        synchronized (GameState.class) {
+            var result = this.gameController.processMove(direction, player.getId());
+            if (result != null) {
+                this.moveEvent.get().handle(new MoveEvent(result, player.getId()));
+            }
         }
     }
 

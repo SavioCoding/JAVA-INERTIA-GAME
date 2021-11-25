@@ -22,7 +22,7 @@ public class Robot implements MoveDelegate {
     /**
      * A generator to get the time interval before the robot makes the next move.
      */
-    public static Generator<Long> timeIntervalGenerator = TimeIntervalGenerator.everySecond();
+    public static Generator<Long> timeIntervalGenerator = TimeIntervalGenerator.veryFast();
 
     /**
      * e.printStackTrace();
@@ -184,26 +184,26 @@ public class Robot implements MoveDelegate {
         Direction aliveDirection = null;
         Direction deadDirection = null;
         Direction gemDirection = null;
-        for (var direction :
-                directions) {
-            var result = tryMove(direction);
-            if (result instanceof MoveResult.Valid.Alive) {
-                aliveDirection = direction;
-                if(checkingGems(direction)==true){
-                    gemDirection = direction;
-                }
-            } else if (result instanceof MoveResult.Valid.Dead) {
-                deadDirection = direction;
-            }
-        }
         synchronized (GameState.class) {
-            if (gemDirection != null) {
-                processor.move(gemDirection);
-            } else if (aliveDirection != null) {
-                processor.move(aliveDirection);
-            } else if (deadDirection != null) {
-                processor.move(deadDirection);
+            for (var direction :
+                    directions) {
+                var result = tryMove(direction);
+                if (result instanceof MoveResult.Valid.Alive) {
+                    aliveDirection = direction;
+                    if (checkingGems(direction) == true) {
+                        gemDirection = direction;
+                    }
+                } else if (result instanceof MoveResult.Valid.Dead) {
+                    deadDirection = direction;
+                }
             }
+                if (gemDirection != null) {
+                    processor.move(gemDirection);
+                } else if (aliveDirection != null) {
+                    processor.move(aliveDirection);
+                } else if (deadDirection != null) {
+                    processor.move(deadDirection);
+                }
         }
     }
 

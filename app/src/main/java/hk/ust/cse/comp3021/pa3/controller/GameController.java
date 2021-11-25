@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Arrays;
 
 /**
  * Controller for {@link hk.ust.cse.comp3021.pa3.InertiaFxGame}.
@@ -100,7 +101,7 @@ public class GameController {
      * @param direction The direction the player wants to move to.
      * @return An instance of {@link MoveResult} indicating the result of the action.
      */
-    public synchronized MoveResult processMove(@NotNull final Direction direction) {
+    public MoveResult processMove(@NotNull final Direction direction) {
         return processMove(direction, getGameState().getPlayer().getId());
     }
 
@@ -113,15 +114,14 @@ public class GameController {
      * @return An instance of {@link MoveResult} indicating the result of the action.
      */
     public MoveResult processMove(@NotNull final Direction direction, int playerID) {
+        synchronized (GameState.class) {
         Objects.requireNonNull(direction);
 
         var result = this.getGameState(playerID).getGameBoardController().makeMove(direction, playerID);
         if (result == null) {
             return null;
         }
-
         var gameState = this.getGameState(playerID);
-        synchronized (gameState) {
             if (result instanceof MoveResult.Valid v) {
                 gameState.incrementNumMoves();
 
@@ -138,10 +138,8 @@ public class GameController {
                     }
                 }
             }
+            return result;
         }
-
-
-        return result;
     }
 
     /**
@@ -182,26 +180,36 @@ public class GameController {
     public Player[] getWinners() {
         //throw new NotImplementedException();
         ArrayList<Player> winners = new ArrayList<>();
+        ArrayList<Player> alivePlayers = new ArrayList<>();
         boolean gems_not_left = false;
         try{
             gems_not_left = getGameState().noGemsLeft();
+            alivePlayers = new ArrayList<>(Arrays.asList(getPlayers()));
         }catch(IllegalArgumentException e){
             Player[] players = getPlayers();
             for(int i=0; i< players.length; i++){
+                System.out.println("Number of gems got by player" + i + ":"+players[i].getGameState().getNumGotGems());
+
+                if(!players[i].getGameState().hasLost()){
+                   alivePlayers.add(players[i]);
+                }
                 gems_not_left = players[i].getGameState().noGemsLeft();
             }
         }
         if(gems_not_left){
-            Player[] players = getPlayers();
-            int max_score = players[0].getGameState().getScore();
-            for(int i=0; i<players.length; i++){
-                if(players[i].getGameState().getScore()>max_score){
-                    max_score = players[i].getGameState().getScore();
+            if(alivePlayers.size()==0){
+                Player[] winner_array = new Player[0];
+                return winner_array;
+            }
+            int max_score = alivePlayers.get(0).getGameState().getScore();
+            for(int i=0; i<alivePlayers.size(); i++){
+                if(alivePlayers.get(i).getGameState().getScore()>max_score){
+                    max_score = alivePlayers.get(i).getGameState().getScore();
                 }
             }
-            for(int i=0; i<players.length; i++){
-                if(players[i].getGameState().getScore()==max_score){
-                    winners.add(players[i]);
+            for(int i=0; i<alivePlayers.size(); i++){
+                if(alivePlayers.get(i).getGameState().getScore()==max_score){
+                    winners.add(alivePlayers.get(i));
                 }
             }
             Player[] winner_array = new Player[winners.size()];

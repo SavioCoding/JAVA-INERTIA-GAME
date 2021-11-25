@@ -37,8 +37,10 @@ public class GameBoardController {
      *
      * @param playerId The id of the player to kick out.
      */
-    public synchronized void kickOut(int playerId) {
-        gameBoard.getPlayer(playerId).getOwner().setEntity(null);
+    public void kickOut(int playerId) {
+        synchronized(GameBoard.class) {
+            gameBoard.getPlayer(playerId).getOwner().setEntity(null);
+        }
     }
 
     /**
@@ -55,7 +57,9 @@ public class GameBoardController {
      */
     @Nullable
     public MoveResult makeMove(@NotNull final Direction direction) {
-        return makeMove(direction, gameBoard.getPlayer().getId());
+        synchronized (GameBoard.class) {
+            return makeMove(direction, gameBoard.getPlayer().getId());
+        }
     }
 
     /**
@@ -80,24 +84,25 @@ public class GameBoardController {
         if (playerOwner == null) {
             return null;
         }
+        synchronized (gameBoard) {
+            final var origPosition = playerOwner.getPosition();
+            final var tryMoveResult = tryMove(origPosition, direction, playerID);
+            if (tryMoveResult instanceof MoveResult.Valid.Alive alive) {
+                // Clear all outstanding entities that the player would've picked up
+                for (@NotNull final var gemPos : alive.collectedGems) {
+                    gameBoard.getEntityCell(gemPos).setEntity(null);
+                }
+                for (@NotNull final var extraLifePos : alive.collectedExtraLives) {
+                    gameBoard.getEntityCell(extraLifePos).setEntity(null);
+                }
 
-        final var origPosition = playerOwner.getPosition();
-        final var tryMoveResult = tryMove(origPosition, direction, playerID);
-        if (tryMoveResult instanceof MoveResult.Valid.Alive alive) {
-            // Clear all outstanding entities that the player would've picked up
-            for (@NotNull final var gemPos : alive.collectedGems) {
-                gameBoard.getEntityCell(gemPos).setEntity(null);
-            }
-            for (@NotNull final var extraLifePos : alive.collectedExtraLives) {
-                gameBoard.getEntityCell(extraLifePos).setEntity(null);
+                // Move the player directly over
+                assert alive.newPosition != null;
+                gameBoard.getEntityCell(alive.newPosition).setEntity(gameBoard.getPlayer(playerID));
             }
 
-            // Move the player directly over
-            assert alive.newPosition != null;
-            gameBoard.getEntityCell(alive.newPosition).setEntity(gameBoard.getPlayer(playerID));
+            return tryMoveResult;
         }
-
-        return tryMoveResult;
     }
 
 
@@ -111,8 +116,9 @@ public class GameBoardController {
      *
      * @param prevMove The {@link MoveResult} object to revert.
      */
-    public synchronized void undoMove(@NotNull final MoveResult prevMove) {
+    public void undoMove(@NotNull final MoveResult prevMove) {
         // undo is not allow in multiplayer mode
+        synchronized (GameBoard.class) {
         if (gameBoard.isMultiplayer()) {
             throw new IllegalCallerException();
         }
@@ -121,15 +127,15 @@ public class GameBoardController {
         if (!(prevMove instanceof final MoveResult.Valid.Alive aliveState)) {
             return;
         }
+            // Effectively makeMove, but reversed
+            gameBoard.getEntityCell(aliveState.origPosition).setEntity(gameBoard.getPlayer());
 
-        // Effectively makeMove, but reversed
-        gameBoard.getEntityCell(aliveState.origPosition).setEntity(gameBoard.getPlayer());
-
-        for (@NotNull final var gemPos : aliveState.collectedGems) {
-            gameBoard.getEntityCell(gemPos).setEntity(new Gem());
-        }
-        for (@NotNull final var extraLifePos : aliveState.collectedExtraLives) {
-            gameBoard.getEntityCell(extraLifePos).setEntity(new ExtraLife());
+            for (@NotNull final var gemPos : aliveState.collectedGems) {
+                gameBoard.getEntityCell(gemPos).setEntity(new Gem());
+            }
+            for (@NotNull final var extraLifePos : aliveState.collectedExtraLives) {
+                gameBoard.getEntityCell(extraLifePos).setEntity(new ExtraLife());
+            }
         }
     }
 
@@ -148,50 +154,52 @@ public class GameBoardController {
      * moving.
      */
     @NotNull
-    public synchronized MoveResult tryMove(@NotNull final Position position, @NotNull final Direction direction, int playerID) {
-        Objects.requireNonNull(position);
-        Objects.requireNonNull(direction);
+    public MoveResult tryMove(@NotNull final Position position, @NotNull final Direction direction, int playerID) {
+        synchronized (GameBoard.class) {
+            Objects.requireNonNull(position);
+            Objects.requireNonNull(direction);
 
-        final var collectedGems = new ArrayList<Position>();
-        final var collectedExtraLives = new ArrayList<Position>();
-        Position lastValidPosition = position;
-        do {
-            final Position newPosition = offsetPosition(lastValidPosition, direction);
-            if (newPosition == null) {
-                break;
-            }
-
-            // in multiplayer mode, we consider other players as a wall.
-            if (gameBoard.getCell(newPosition) instanceof EntityCell entityCell)
-                if (entityCell.getEntity() instanceof Player otherPlayer)
-                    if (otherPlayer.getId() != playerID)
-                        break;
-
-
-            lastValidPosition = newPosition;
-
-            if (gameBoard.getCell(newPosition) instanceof StopCell) {
-                break;
-            }
-
-            if (gameBoard.getCell(newPosition) instanceof EntityCell entityCell) {
-                if (entityCell.getEntity() instanceof Mine) {
-                    return new MoveResult.Valid.Dead(position, newPosition);
+            final var collectedGems = new ArrayList<Position>();
+            final var collectedExtraLives = new ArrayList<Position>();
+            Position lastValidPosition = position;
+            do {
+                final Position newPosition = offsetPosition(lastValidPosition, direction);
+                if (newPosition == null) {
+                    break;
                 }
 
-                if (entityCell.getEntity() instanceof Gem) {
-                    collectedGems.add(newPosition);
-                } else if (entityCell.getEntity() instanceof ExtraLife) {
-                    collectedExtraLives.add(newPosition);
-                }
-            }
-        } while (true);
+                // in multiplayer mode, we consider other players as a wall.
+                if (gameBoard.getCell(newPosition) instanceof EntityCell entityCell)
+                    if (entityCell.getEntity() instanceof Player otherPlayer)
+                        if (otherPlayer.getId() != playerID)
+                            break;
 
-        if (lastValidPosition.equals(position)) {
-            return new MoveResult.Invalid(position);
+
+                lastValidPosition = newPosition;
+
+                if (gameBoard.getCell(newPosition) instanceof StopCell) {
+                    break;
+                }
+
+                if (gameBoard.getCell(newPosition) instanceof EntityCell entityCell) {
+                    if (entityCell.getEntity() instanceof Mine) {
+                        return new MoveResult.Valid.Dead(position, newPosition);
+                    }
+
+                    if (entityCell.getEntity() instanceof Gem) {
+                        collectedGems.add(newPosition);
+                    } else if (entityCell.getEntity() instanceof ExtraLife) {
+                        collectedExtraLives.add(newPosition);
+                    }
+                }
+            } while (true);
+
+            if (lastValidPosition.equals(position)) {
+                return new MoveResult.Invalid(position);
+            }
+
+            return new MoveResult.Valid.Alive(lastValidPosition, position, collectedGems, collectedExtraLives);
         }
-
-        return new MoveResult.Valid.Alive(lastValidPosition, position, collectedGems, collectedExtraLives);
     }
 
     /**
@@ -222,42 +230,44 @@ public class GameBoardController {
         return newPos;
     }
 
-    public synchronized boolean checkGems(@NotNull final Position position, @NotNull final Direction direction, int playerID) {
-        Objects.requireNonNull(position);
-        Objects.requireNonNull(direction);
+    public boolean checkGems(@NotNull final Position position, @NotNull final Direction direction, int playerID) {
+        synchronized (GameBoard.class) {
+            Objects.requireNonNull(position);
+            Objects.requireNonNull(direction);
 
-        final var collectedGems = new ArrayList<Position>();
-        final var collectedExtraLives = new ArrayList<Position>();
-        Position lastValidPosition = position;
-        do {
-            final Position newPosition = offsetPosition(lastValidPosition, direction);
-            if (newPosition == null) {
-                break;
-            }
-
-            // in multiplayer mode, we consider other players as a wall.
-            if (gameBoard.getCell(newPosition) instanceof EntityCell entityCell)
-                if (entityCell.getEntity() instanceof Player otherPlayer)
-                    if (otherPlayer.getId() != playerID)
-                        break;
-
-
-            lastValidPosition = newPosition;
-
-            if (gameBoard.getCell(newPosition) instanceof StopCell) {
-                break;
-            }
-
-            if (gameBoard.getCell(newPosition) instanceof EntityCell entityCell) {
-
-                if (entityCell.getEntity() instanceof Gem) {
-                    collectedGems.add(newPosition);
-                } else if (entityCell.getEntity() instanceof ExtraLife) {
-                    collectedExtraLives.add(newPosition);
+            final var collectedGems = new ArrayList<Position>();
+            final var collectedExtraLives = new ArrayList<Position>();
+            Position lastValidPosition = position;
+            do {
+                final Position newPosition = offsetPosition(lastValidPosition, direction);
+                if (newPosition == null) {
+                    break;
                 }
-            }
-        } while (true);
 
-        return collectedGems.size()>0;
+                // in multiplayer mode, we consider other players as a wall.
+                if (gameBoard.getCell(newPosition) instanceof EntityCell entityCell)
+                    if (entityCell.getEntity() instanceof Player otherPlayer)
+                        if (otherPlayer.getId() != playerID)
+                            break;
+
+
+                lastValidPosition = newPosition;
+
+                if (gameBoard.getCell(newPosition) instanceof StopCell) {
+                    break;
+                }
+
+                if (gameBoard.getCell(newPosition) instanceof EntityCell entityCell) {
+
+                    if (entityCell.getEntity() instanceof Gem) {
+                        collectedGems.add(newPosition);
+                    } else if (entityCell.getEntity() instanceof ExtraLife) {
+                        collectedExtraLives.add(newPosition);
+                    }
+                }
+            } while (true);
+
+            return collectedGems.size() > 0;
+        }
     }
 }
