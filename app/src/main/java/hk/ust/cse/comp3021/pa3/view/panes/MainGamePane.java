@@ -115,14 +115,15 @@ public class MainGamePane extends VBox implements GameUIComponent {
         this.gameBoardPane.showGameState(gameController.getGameStates());
 
         // show lose dialog if the move event indicates a player loses and get kicked out of the game board.
-        if (e.getMoveResult() instanceof MoveResult.Valid.KickedOut) {
-            getPlayerPane(e.getPlayerID()).kickOut();
-            UIServices.showLoseDialog(gameController.getGameBoard().getPlayer(e.getPlayerID()));
+        synchronized (GameBoard.class) {
+            if (e.getMoveResult() instanceof MoveResult.Valid.KickedOut) {
+                getPlayerPane(e.getPlayerID()).kickOut();
+                UIServices.showLoseDialog(gameController.getGameBoard().getPlayer(e.getPlayerID()));
+            }
         }
 
         // try to get winners from the game controller
         var winners = gameController.getWinners();
-
         // winners == null means the game is still on going.
         if (winners != null) {
             gameEnded = true;

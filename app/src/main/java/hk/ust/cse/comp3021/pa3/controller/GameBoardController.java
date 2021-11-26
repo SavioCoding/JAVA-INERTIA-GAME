@@ -5,7 +5,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Objects;
 
 /**
@@ -76,15 +75,13 @@ public class GameBoardController {
      * @return An instance of {@link MoveResult} representing the result of this action.
      */
     @Nullable
-    public synchronized MoveResult makeMove(@NotNull final Direction direction, int playerID) {
+    public MoveResult makeMove(@NotNull final Direction direction, int playerID) {
         Objects.requireNonNull(direction);
-
-
-        var playerOwner = gameBoard.getPlayer(playerID).getOwner();
-        if (playerOwner == null) {
-            return null;
-        }
-        synchronized (gameBoard) {
+        synchronized (GameBoard.class) {
+            var playerOwner = gameBoard.getPlayer(playerID).getOwner();
+            if (playerOwner == null) {
+                return null;
+            }
             final var origPosition = playerOwner.getPosition();
             final var tryMoveResult = tryMove(origPosition, direction, playerID);
             if (tryMoveResult instanceof MoveResult.Valid.Alive alive) {
@@ -119,23 +116,23 @@ public class GameBoardController {
     public void undoMove(@NotNull final MoveResult prevMove) {
         // undo is not allow in multiplayer mode
         synchronized (GameBoard.class) {
-        if (gameBoard.isMultiplayer()) {
-            throw new IllegalCallerException();
-        }
-
-        Objects.requireNonNull(prevMove);
-        if (!(prevMove instanceof final MoveResult.Valid.Alive aliveState)) {
-            return;
-        }
-            // Effectively makeMove, but reversed
-            gameBoard.getEntityCell(aliveState.origPosition).setEntity(gameBoard.getPlayer());
-
-            for (@NotNull final var gemPos : aliveState.collectedGems) {
-                gameBoard.getEntityCell(gemPos).setEntity(new Gem());
+            if (gameBoard.isMultiplayer()) {
+                throw new IllegalCallerException();
             }
-            for (@NotNull final var extraLifePos : aliveState.collectedExtraLives) {
-                gameBoard.getEntityCell(extraLifePos).setEntity(new ExtraLife());
+
+            Objects.requireNonNull(prevMove);
+            if (!(prevMove instanceof final MoveResult.Valid.Alive aliveState)) {
+                return;
             }
+                // Effectively makeMove, but reversed
+                gameBoard.getEntityCell(aliveState.origPosition).setEntity(gameBoard.getPlayer());
+
+                for (@NotNull final var gemPos : aliveState.collectedGems) {
+                    gameBoard.getEntityCell(gemPos).setEntity(new Gem());
+                }
+                for (@NotNull final var extraLifePos : aliveState.collectedExtraLives) {
+                    gameBoard.getEntityCell(extraLifePos).setEntity(new ExtraLife());
+                }
         }
     }
 

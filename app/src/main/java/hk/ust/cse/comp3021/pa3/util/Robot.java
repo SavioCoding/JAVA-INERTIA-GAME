@@ -6,7 +6,6 @@ import hk.ust.cse.comp3021.pa3.model.MoveResult;
 import javafx.application.Platform;
 import org.jetbrains.annotations.NotNull;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import hk.ust.cse.comp3021.pa3.model.*;
 /**
  * The Robot is an automated worker that can delegate the movement control of a player.
@@ -22,7 +21,7 @@ public class Robot implements MoveDelegate {
     /**
      * A generator to get the time interval before the robot makes the next move.
      */
-    public static Generator<Long> timeIntervalGenerator = TimeIntervalGenerator.veryFast();
+    public static Generator<Long> timeIntervalGenerator = TimeIntervalGenerator.everySecond();
 
     /**
      * e.printStackTrace();
@@ -51,7 +50,7 @@ public class Robot implements MoveDelegate {
     private class Worker implements Runnable{
         private MoveProcessor processor;
 
-        public Worker(MoveProcessor processor){
+        Worker(MoveProcessor processor){
             this.processor = processor;
         }
 
@@ -63,9 +62,9 @@ public class Robot implements MoveDelegate {
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-                if(strategy==Strategy.Random) {
+                if(strategy == Strategy.Random) {
                     Platform.runLater(() -> makeMoveRandomly(processor));
-                }else if(strategy==Strategy.Smart){
+                }else if(strategy == Strategy.Smart){
                     Platform.runLater(()-> makeMoveSmartly(processor));
                 }
             }
@@ -144,25 +143,25 @@ public class Robot implements MoveDelegate {
      * @param processor The processor to make movements.
      */
     private void makeMoveRandomly(MoveProcessor processor) {
-        var directions = new ArrayList<>(Arrays.asList(Direction.values()));
-        Collections.shuffle(directions);
-        Direction aliveDirection = null;
-        Direction deadDirection = null;
-        for (var direction :
-                directions) {
-            var result = tryMove(direction);
-            if (result instanceof MoveResult.Valid.Alive) {
-                aliveDirection = direction;
-            } else if (result instanceof MoveResult.Valid.Dead) {
-                deadDirection = direction;
+        synchronized (GameState.class){
+            var directions = new ArrayList<>(Arrays.asList(Direction.values()));
+            Collections.shuffle(directions);
+            Direction aliveDirection = null;
+            Direction deadDirection = null;
+            for (var direction :
+                    directions) {
+                var result = tryMove(direction);
+                if (result instanceof MoveResult.Valid.Alive) {
+                    aliveDirection = direction;
+                } else if (result instanceof MoveResult.Valid.Dead) {
+                    deadDirection = direction;
+                }
             }
-        }
-        synchronized (GameState.class) {
-            if (aliveDirection != null) {
-                processor.move(aliveDirection);
-            } else if (deadDirection != null) {
-                processor.move(deadDirection);
-            }
+                if (aliveDirection != null) {
+                    processor.move(aliveDirection);
+                } else if (deadDirection != null) {
+                    processor.move(deadDirection);
+                }
         }
     }
 
@@ -179,18 +178,18 @@ public class Robot implements MoveDelegate {
      * @param processor The processor to make movements.
      */
     private void makeMoveSmartly(MoveProcessor processor) {
-        var directions = new ArrayList<>(Arrays.asList(Direction.values()));
-        Collections.shuffle(directions);
-        Direction aliveDirection = null;
-        Direction deadDirection = null;
-        Direction gemDirection = null;
         synchronized (GameState.class) {
+            var directions = new ArrayList<>(Arrays.asList(Direction.values()));
+            Collections.shuffle(directions);
+            Direction aliveDirection = null;
+            Direction deadDirection = null;
+            Direction gemDirection = null;
             for (var direction :
                     directions) {
                 var result = tryMove(direction);
                 if (result instanceof MoveResult.Valid.Alive) {
                     aliveDirection = direction;
-                    if (checkingGems(direction) == true) {
+                    if (checkingGems(direction)) {
                         gemDirection = direction;
                     }
                 } else if (result instanceof MoveResult.Valid.Dead) {
